@@ -1,0 +1,17 @@
+# Virtual environment
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# TV pairing keys (sensitive!)
+.aiopylgtv.sqlite
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store

@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LG OLED TV Setup",
+        "description": "Enter the IP address of your LG TV.",
+        "data": {
+          "host": "IP Address",
+          "name": "Device Name"
+        }
+      },
+      "pairing": {
+        "title": "Pair with TV",
+        "description": "A pairing request will appear on your TV at {host}. Please accept it using your remote.\n\nClick Submit when you're ready."
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to TV. Make sure it's turned on and the IP is correct.",
+      "timeout": "Pairing timed out. Make sure you accepted the pairing request on the TV.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This TV is already configured."
+    }
+  }
+}
