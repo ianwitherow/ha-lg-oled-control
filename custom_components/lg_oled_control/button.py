@@ -4,19 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-import logging
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import LGTVCoordinator
-
-_LOGGER = logging.getLogger(__name__)
+from .entity import LGTVEntity
 
 
 @dataclass(frozen=True)
@@ -76,11 +72,10 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class LGTVButtonEntity(ButtonEntity):
+class LGTVButtonEntity(LGTVEntity, ButtonEntity):
     """Button entity for LG TV actions."""
 
     entity_description: LGTVButtonEntityDescription
-    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -89,25 +84,10 @@ class LGTVButtonEntity(ButtonEntity):
         description: LGTVButtonEntityDescription,
     ) -> None:
         """Initialize the button entity."""
-        self.coordinator = coordinator
+        super().__init__(coordinator, entry, description.key)
         self.entity_description = description
-        self._entry = entry
-        self._attr_unique_id = f"{entry.data[CONF_HOST]}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.data[CONF_HOST])},
-            name=entry.data.get(CONF_NAME, "LG TV"),
-            manufacturer="LG",
-            model="OLED TV",
-        )
 
     async def async_press(self) -> None:
         """Handle button press."""
         if self.entity_description.press_fn is not None:
-            try:
-                await self.entity_description.press_fn(self.coordinator)
-            except Exception as err:
-                _LOGGER.error(
-                    "Failed to execute %s: %s",
-                    self.entity_description.key,
-                    err,
-                )
+            await self.entity_description.press_fn(self.coordinator)

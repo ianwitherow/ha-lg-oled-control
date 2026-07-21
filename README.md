@@ -21,6 +21,7 @@ A Home Assistant custom integration for controlling LG OLED TV picture settings.
 
 ## Requirements
 
+- Home Assistant 2024.11 or newer
 - LG WebOS TV (tested on C2 OLED)
 - "LG Connect Apps" enabled on TV: **Settings → Network → LG Connect Apps**
 - For backlight control: Disable **Settings → General → OLED Care → Device Self Care → Energy Saving**

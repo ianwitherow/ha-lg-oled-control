@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
+import math
 from typing import Any
 
 from homeassistant.components.light import (
@@ -13,25 +13,15 @@ from homeassistant.components.light import (
     LightEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util.color import brightness_to_value, value_to_brightness
 
 from .const import DOMAIN
 from .coordinator import LGTVCoordinator
+from .entity import LGTVEntity
 
-_LOGGER = logging.getLogger(__name__)
-
-
-def brightness_to_value(brightness: int) -> int:
-    """Convert HA brightness (0-255) to TV value (0-100)."""
-    return round(brightness * 100 / 255)
-
-
-def value_to_brightness(value: int) -> int:
-    """Convert TV value (0-100) to HA brightness (0-255)."""
-    return round(value * 255 / 100)
+BRIGHTNESS_SCALE = (1, 100)  # TV picture settings range
 
 
 @dataclass(frozen=True)
@@ -81,11 +71,10 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class LGTVLightEntity(LightEntity):
+class LGTVLightEntity(LGTVEntity, LightEntity):
     """Light entity for LG TV brightness controls."""
 
     entity_description: LGTVLightEntityDescription
-    _attr_has_entity_name = True
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
@@ -96,92 +85,48 @@ class LGTVLightEntity(LightEntity):
         description: LGTVLightEntityDescription,
     ) -> None:
         """Initialize the light entity."""
-        self.coordinator = coordinator
+        super().__init__(coordinator, entry, description.key)
         self.entity_description = description
-        self._entry = entry
-        self._attr_unique_id = f"{entry.data[CONF_HOST]}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.data[CONF_HOST])},
-            name=entry.data.get(CONF_NAME, "LG TV"),
-            manufacturer="LG",
-            model="OLED TV",
-        )
-        self._brightness: int = 128  # Default to ~50%
-        self._is_on: bool = True
+        self._last_on_value: int | None = None
+
+    @property
+    def _value(self) -> int:
+        """Return the TV-side value (0-100) this entity tracks."""
+        data = self.coordinator.data or {}
+        if self.entity_description.is_combined:
+            return data.get("backlight", 0)
+        return data.get(self.entity_description.setting_key, 0)
 
     @property
     def is_on(self) -> bool:
         """Return True if light is on."""
-        return self._is_on
+        return self._value > 0
 
     @property
-    def brightness(self) -> int:
+    def brightness(self) -> int | None:
         """Return the brightness of the light."""
-        return self._brightness
+        value = self._value
+        return value_to_brightness(BRIGHTNESS_SCALE, value) if value > 0 else None
+
+    def _settings_for(self, value: int) -> dict[str, int]:
+        """Build the settings payload for this entity."""
+        if self.entity_description.is_combined:
+            return {"backlight": value, "contrast": value}
+        return {self.entity_description.setting_key: value}
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light / set brightness."""
         if ATTR_BRIGHTNESS in kwargs:
-            brightness = kwargs[ATTR_BRIGHTNESS]
-            value = brightness_to_value(brightness)
-
-            try:
-                if self.entity_description.is_combined:
-                    await self.coordinator.async_set_picture_settings(
-                        {"backlight": value, "contrast": value}
-                    )
-                else:
-                    await self.coordinator.async_set_picture_settings(
-                        {self.entity_description.setting_key: value}
-                    )
-                self._brightness = brightness
-                self._is_on = True
-                self.async_write_ha_state()
-            except Exception as err:
-                _LOGGER.error(
-                    "Failed to set %s to %s: %s",
-                    self.entity_description.key,
-                    value,
-                    err,
-                )
+            value = math.ceil(
+                brightness_to_value(BRIGHTNESS_SCALE, kwargs[ATTR_BRIGHTNESS])
+            )
         else:
-            # Just turn on - set to 100%
-            self._is_on = True
-            self.async_write_ha_state()
+            # Restore the value from before turn_off; full brightness if unknown.
+            value = self._last_on_value or 100
+        await self.coordinator.async_set_picture_settings(self._settings_for(value))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light (set to 0)."""
-        try:
-            if self.entity_description.is_combined:
-                await self.coordinator.async_set_picture_settings(
-                    {"backlight": 0, "contrast": 0}
-                )
-            else:
-                await self.coordinator.async_set_picture_settings(
-                    {self.entity_description.setting_key: 0}
-                )
-            self._brightness = 0
-            self._is_on = False
-            self.async_write_ha_state()
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to turn off %s: %s",
-                self.entity_description.key,
-                err,
-            )
-
-    async def async_added_to_hass(self) -> None:
-        """Run when entity is added to hass."""
-        await super().async_added_to_hass()
-        # Try to get initial value
-        try:
-            settings = await self.coordinator.async_get_picture_settings()
-            if self.entity_description.is_combined:
-                value = settings.get("backlight", 50)
-            else:
-                value = settings.get(self.entity_description.setting_key, 50)
-            self._brightness = value_to_brightness(value)
-            self._is_on = value > 0
-            self.async_write_ha_state()
-        except Exception as err:
-            _LOGGER.debug("Could not get initial value: %s", err)
+        if self._value > 0:
+            self._last_on_value = self._value
+        await self.coordinator.async_set_picture_settings(self._settings_for(0))
