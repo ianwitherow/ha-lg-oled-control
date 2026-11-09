@@ -14,6 +14,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.data_entry_flow import FlowResult
 
+from .client import build_unsigned_manifest
 from .const import CONF_CLIENT_KEY, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -98,6 +99,8 @@ class LGOLEDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_pair_tv(self) -> str:
         """Attempt to pair with the TV and return the client key."""
         client = await WebOsClient.create(self._host, ping_interval=None, states=[])
+        # LG blacklists the signed manifest's certificate; pair with the unsigned one.
+        client.manifest = build_unsigned_manifest()
 
         try:
             await asyncio.wait_for(client.connect(), timeout=60)

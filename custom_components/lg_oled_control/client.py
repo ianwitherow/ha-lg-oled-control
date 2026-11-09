@@ -33,11 +33,30 @@ This subclass avoids all three without patching the library:
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Callable
 from typing import Any
 
 import websockets
 from bscpylgtv import WebOsClient
+from bscpylgtv.manifest import MANIFEST
+
+
+def build_unsigned_manifest() -> dict[str, Any]:
+    """Return bscpylgtv's manifest without the signed block or signature.
+
+    LG now blacklists the signed manifest's certificate (403 "blacklisted
+    certificate detected"). Dropping the signed block and moving its
+    permissions into the normal list is the approach Home Assistant's own
+    webostv library uses.
+    """
+    manifest = copy.deepcopy(MANIFEST)
+    signed = manifest.pop("signed", {})
+    manifest.pop("signatures", None)
+    manifest["permissions"] = list(
+        dict.fromkeys([*manifest["permissions"], *signed.get("permissions", [])])
+    )
+    return manifest
 
 
 class LGTVWebOsClient(WebOsClient):
@@ -51,6 +70,7 @@ class LGTVWebOsClient(WebOsClient):
     ) -> None:
         """Initialize the client."""
         super().__init__(*args, **kwargs)
+        self.manifest = build_unsigned_manifest()
         self._on_state_change = on_state_change
 
     def _notify(self) -> None:
